@@ -32,7 +32,7 @@ __license__ = 'MIT'
 __copyright__ = 'Copyright 2012 Maxime Bouroumeau-Fuseau'
 
 __all__ = ['WithingsCredentials', 'WithingsAuth', 'WithingsApi',
-           'WithingsMeasures', 'WithingsMeasureGroup']
+           'WithingsMeasures', 'WithingsActivity', 'WithingsMeasureGroup']
 
 import requests
 from requests_oauthlib import OAuth1, OAuth1Session
@@ -95,6 +95,7 @@ class WithingsApi(object):
                             signature_type='query')
         self.client = requests.Session()
         self.client.auth = self.oauth
+        self.user_id = credentials.user_id
         self.client.params.update({'userid': credentials.user_id})
 
     def request(self, service, action, params=None, method='GET'):
@@ -107,8 +108,24 @@ class WithingsApi(object):
             raise Exception("Error code %s" % response['status'])
         return response.get('body', None)
 
+    def v2_request(self, service, action, date):
+        method='GET'
+        params = {}
+        params['action'] = action
+        params['date'] = date
+        params['userid'] = self.user_id
+        r = self.client.request(method, '%s/v2/%s' % (self.URL, service), params=params)
+        response = json.loads(r.content)
+        if response['status'] != 0:
+            raise Exception("Error code %s" % response['status'])
+        return response.get('body', None)
+
     def get_user(self):
         return self.request('user', 'getbyuserid')
+
+    def get_activity(self, date):
+        r = self.v2_request('measure', 'getactivity', date)
+        return WithingsActivity(r)
 
     def get_measures(self, **kwargs):
         r = self.request('measure', 'getmeas', kwargs)
@@ -141,6 +158,24 @@ class WithingsMeasures(list):
     def __init__(self, data):
         super(WithingsMeasures, self).__init__([WithingsMeasureGroup(g) for g in data['measuregrps']])
         self.updatetime = datetime.datetime.fromtimestamp(data['updatetime'])
+
+class WithingsActivity:
+    def __init__(self, data):
+        self.date = 0
+        self.steps = 0
+        self.distance = 0
+        self.calories = 0
+        self.elevation = 0
+
+        if 'date' in data: 
+            self.date = data['date']
+            self.steps = data['steps']
+            self.distance = data['distance']
+            self.calories = data['calories']
+            self.elevation = data['elevation']
+
+    def __str__(self):
+        return "date=%s\nsteps=%s\ndistance=%s\ncalories=%s\nelevation=%s" % (self.date, self.steps, self.distance, self.calories, self.elevation)
 
 
 class WithingsMeasureGroup(object):
